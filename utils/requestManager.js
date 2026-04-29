@@ -255,6 +255,20 @@ class RequestManager {
         }
     }      
     
+    static async fetchRedirect(url, cookieHeader) {
+        return axios.get(url, {
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': Config.getUrl('home'),
+                'User-Agent': Config.userAgent,
+                'Cookie': cookieHeader,
+            },
+            maxRedirects: 0,
+            validateStatus: () => true,
+        });
+    }
+
     static async rawRequest(url, options = {}) {
         try {
             return await axios.get(url, options);

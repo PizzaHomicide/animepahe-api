@@ -7,6 +7,7 @@ const homeRoutes = require('../routes/homeRoutes');
 const queueRoutes = require('../routes/queueRoutes');
 const animeListRoutes = require('../routes/animeListRoutes');
 const animeInfoRoutes = require('../routes/animeInfoRoutes');
+const resolveRoutes = require('../routes/resolveRoutes');
 const playRoutes = require('../routes/playRoutes');
 const cache = require('../middleware/cache');
 const testRoutes = require('../routes/testRoutes');
@@ -64,6 +65,7 @@ app.use('/api', testRoutes);
 app.use('/api', homeRoutes); // caching done in homeRoutes
 app.use('/api', cache(30), queueRoutes); // 30 seconds
 app.use('/api', cache(18000), animeListRoutes); // 1 hour
+app.use('/api', cache(86400), resolveRoutes); // 1 day — must mount before animeInfoRoutes (it has a /:id wildcard)
 app.use('/api', cache(86400), animeInfoRoutes); // 1 day
 app.use('/api', cache(3600), playRoutes);  // 5 hours
 

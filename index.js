@@ -19,6 +19,7 @@ const AnimeInfoModel = require('./models/animeInfoModel');
 const AnimeListModel = require('./models/animeListModel');
 const PlayModel = require('./models/playModel');
 const QueueModel = require('./models/queueModel');
+const ResolveModel = require('./models/resolveModel');
 
 // Config Utility (for setting cookies, base URL, etc.)
 const Config = require('./utils/config');
@@ -111,6 +112,15 @@ async function getQueue() {
     return QueueModel.getQueue();
 }
 
+/**
+ * Resolve a static AnimePahe ID (e.g. from /a/4161) to a session ID.
+ * @param {string|number} staticId
+ * @returns {Promise<{id: string, session: string, link: string}>}
+ */
+async function resolve(staticId) {
+    return ResolveModel.resolveStaticId(String(staticId));
+}
+
 // Export everything
 module.exports = {
     // High-level API (Recommended)
@@ -123,17 +133,19 @@ module.exports = {
     getDownloadLink,
     getAnimeList,
     getQueue,
-    
+    resolve,
+
     // Low-level access (Advanced)
     Animepahe,        // Raw scraper singleton
     Config,           // Configuration utility
-    
+
     // Models (for direct access if needed)
     models: {
         HomeModel,
         AnimeInfoModel,
         AnimeListModel,
         PlayModel,
-        QueueModel
+        QueueModel,
+        ResolveModel
     }
 };

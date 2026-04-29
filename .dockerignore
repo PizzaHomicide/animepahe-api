@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+.vercel
+codedumpsite
+data
+test.js
+Dockerfile
+.dockerignore
+readme.md
+LICENSE

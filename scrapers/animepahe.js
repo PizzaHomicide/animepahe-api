@@ -78,21 +78,33 @@ class Animepahe {
 
             console.log('Navigating to URL...');
             await page.goto(Config.getUrl('home'), {
-                waitUntil: 'networkidle',
-                timeout: 30000, 
+                waitUntil: 'domcontentloaded',
+                timeout: 30000,
             });
 
-            // Check for DDoS-Guard challenge
-            await page.waitForTimeout(2000);
-            const isChallengeActive = await page.$('#ddg-cookie');
-            if (isChallengeActive) {
-                console.log('Solving DDoS-Guard challenge...');
-                await page.waitForSelector('#ddg-cookie', { state: 'hidden', timeout: 30000 });
+            // Wait for either: the challenge to clear, or real animepahe content to appear.
+            // `page.$` after a navigation can throw "Execution context was destroyed" — swallow it.
+            try {
+                await Promise.race([
+                    page.waitForSelector('#ddg-cookie', { state: 'detached', timeout: 30000 }),
+                    page.waitForSelector('header, nav, main, .navbar', { timeout: 30000 }),
+                ]);
+            } catch (e) {
+                console.warn('Challenge wait timed out, continuing to read cookies:', e.message);
             }
+            await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
 
             const cookies = await context.cookies();
             if (!cookies || cookies.length === 0) {
                 throw new CustomError('No cookies found after page load', 503);
+            }
+
+            // Sanity check: warn if we only got pre-challenge tracking cookies.
+            // A solved DDoS-Guard challenge typically yields __ddg2_ (or similar session token).
+            const hasSessionCookie = cookies.some(c => /__ddg2_|ddg_session|ddg_token/i.test(c.name));
+            if (!hasSessionCookie) {
+                console.warn('No DDoS-Guard session cookie found — challenge may not have solved. Cookies issued: ' +
+                    cookies.map(c => c.name).join(', '));
             }
 
             const cookieData = {
@@ -149,18 +161,21 @@ class Animepahe {
         return cookieHeader;
     }
 
-    async fetchApiData(endpoint, params = {}, userProvidedCookies = null) {
+    async fetchApiData(endpoint, params = {}, userProvidedCookies = null, _retried = false) {
         try {
             const cookieHeader = await this.getCookies(userProvidedCookies);
             const url = new URL(endpoint, Config.getUrl('home')).toString();
             return await RequestManager.fetchApiData(url, params, cookieHeader);
         } catch (error) {
-            // Only retry with automatic cookies if user didn't provide cookies
-            if (!userProvidedCookies && (error.response?.status === 401 || error.response?.status === 403)) {
+            const status = error.response?.status || error.statusCode;
+            const isAuthError = status === 401 || status === 403 ||
+                (error.message && error.message.includes('DDoS-Guard'));
+
+            if (!userProvidedCookies && !_retried && isAuthError) {
                 await this.refreshCookies();
-                return this.fetchApiData(endpoint, params, userProvidedCookies);
+                return this.fetchApiData(endpoint, params, userProvidedCookies, true);
             }
-            throw new CustomError(error.message || 'Failed to fetch API data', error.response?.status || 503);
+            throw new CustomError(error.message || 'Failed to fetch API data', status || 503);
         }
     }
 
@@ -184,6 +199,36 @@ class Animepahe {
             throw new CustomError('Anime ID is required', 400);
         }
         return this.fetchApiData('/api', { m: 'release', id, sort, page }, userProvidedCookies);
+    }
+
+    async resolveStaticId(staticId, _retried = false) {
+        if (!staticId) {
+            throw new CustomError('Static ID is required', 400);
+        }
+
+        const url = `${Config.baseUrl}/a/${staticId}`;
+        const cookieHeader = await this.getCookies();
+        const response = await RequestManager.fetchRedirect(url, cookieHeader);
+
+        if (response.status === 301 || response.status === 302) {
+            const location = response.headers.location || '';
+            const match = location.match(/\/anime\/([^/?#]+)/);
+            if (!match) {
+                throw new CustomError(`Unexpected redirect location: ${location}`, 503);
+            }
+            return match[1];
+        }
+
+        if (response.status === 404) {
+            throw new CustomError('Anime not found', 404);
+        }
+
+        if ((response.status === 401 || response.status === 403) && !_retried) {
+            await this.refreshCookies();
+            return this.resolveStaticId(staticId, true);
+        }
+
+        throw new CustomError(`Failed to resolve static ID (status ${response.status})`, response.status || 503);
     }
 
     // Scraping Methods
